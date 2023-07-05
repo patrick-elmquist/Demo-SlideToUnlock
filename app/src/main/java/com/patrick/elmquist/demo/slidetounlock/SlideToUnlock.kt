@@ -3,7 +3,6 @@
 package com.patrick.elmquist.demo.slidetounlock
 
 import androidx.annotation.VisibleForTesting
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -59,18 +58,6 @@ import androidx.compose.ui.unit.times
 import com.patrick.elmquist.demo.slidetounlock.ui.theme.DemoSlideToUnlockTheme
 import kotlin.math.roundToInt
 
-private object Colors {
-    object Track {
-        val inactive = Color(0xFF111111)
-        val active = Color(0xFFFFDB00)
-    }
-
-    object Hint {
-        val inactive = Color.White
-        val active = Color.White.copy(alpha = 0f)
-    }
-}
-
 @Composable
 fun SlideToUnlock(
     isLoading: Boolean,
@@ -78,25 +65,19 @@ fun SlideToUnlock(
     onUnlockRequested: () -> Unit = {},
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    var swipeFraction by remember { mutableStateOf(0f) }
     val swipeState = rememberSwipeableState(
         initialValue = if (isLoading) Track.Anchor.End else Track.Anchor.Start,
-    ) { anchor ->
-        if (anchor == Track.Anchor.End) {
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-            onUnlockRequested()
+        confirmStateChange = { anchor ->
+            if (anchor == Track.Anchor.End) {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                onUnlockRequested()
+            }
+            true
         }
-        true
-    }
+    )
 
-    val thumbOffset = IntOffset(swipeState.offset.value.roundToInt(), 0)
-
-    LaunchedEffect(isLoading) {
-        swipeState.animateTo(if (isLoading) Track.Anchor.End else Track.Anchor.Start)
-    }
-
-    LaunchedEffect(swipeState.progress) {
-        swipeFraction = calculateSwipeFraction(swipeState.progress)
+    val swipeFraction by remember {
+        derivedStateOf { calculateSwipeFraction(swipeState.progress) }
     }
 
     val backgroundColor by remember {
@@ -105,6 +86,10 @@ fun SlideToUnlock(
 
     val hintTextColor by remember {
         derivedStateOf { calculateHintTextColor(swipeFraction) }
+    }
+
+    LaunchedEffect(isLoading) {
+        swipeState.animateTo(if (isLoading) Track.Anchor.End else Track.Anchor.Start)
     }
 
     Track(
@@ -124,7 +109,8 @@ fun SlideToUnlock(
 
         Thumb(
             isLoading = isLoading,
-            modifier = Modifier.offset { thumbOffset },
+            modifier = Modifier
+                .offset { IntOffset(swipeState.offset.value.roundToInt(), 0) },
         )
     }
 }
@@ -137,11 +123,13 @@ private fun Track(
     modifier: Modifier = Modifier,
     content: @Composable (BoxScope.() -> Unit),
 ) {
+    val density = LocalDensity.current
     var fullWidth by remember { mutableStateOf(0) }
     val startOfTrack = 0f
-    val endOfTrack = with(LocalDensity.current) {
-        fullWidth - (2 * Track.HorizontalPadding + Thumb.Size).toPx()
+    val endOfTrack = remember(fullWidth) {
+        with(density) { fullWidth - (2 * Track.HorizontalPadding + Thumb.Size).toPx() }
     }
+
     Box(
         modifier = modifier
             .onSizeChanged { fullWidth = it.width }
@@ -205,13 +193,12 @@ private fun calculateSwipeFraction(progress: SwipeProgress<Track.Anchor>): Float
 
 private fun calculateHintTextColor(swipeFraction: Float): Color {
     val fraction = (swipeFraction / Hint.FadeOutThreshold).coerceIn(0f..1f)
-    return lerp(Colors.Hint.inactive, Colors.Hint.active, fraction)
+    return lerp(Color.White, Color.White.copy(alpha = 0f), fraction)
 }
 
 private fun calculateTrackColor(swipeFraction: Float): Color {
-    var fraction = (swipeFraction / Track.BackgroundChangeThreshold).coerceIn(0f..1f)
-    fraction = LinearOutSlowInEasing.transform(fraction)
-    return lerp(Colors.Track.inactive, Colors.Track.active, fraction)
+    val fraction = (swipeFraction / Track.BackgroundChangeThreshold).coerceIn(0f..1f)
+    return lerp(Color(0xFF111111), Color(0xFFFFDB00), fraction)
 }
 
 private object Hint {
