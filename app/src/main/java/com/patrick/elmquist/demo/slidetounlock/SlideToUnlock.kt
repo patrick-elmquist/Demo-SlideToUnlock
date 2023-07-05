@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -33,7 +34,6 @@ import androidx.compose.material.SwipeableState
 import androidx.compose.material.rememberSwipeableState
 import androidx.compose.material.swipeable
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +59,18 @@ import androidx.compose.ui.unit.times
 import com.patrick.elmquist.demo.slidetounlock.ui.theme.DemoSlideToUnlockTheme
 import kotlin.math.roundToInt
 
+private object Colors {
+    object Track {
+        val inactive = Color(0xFF111111)
+        val active = Color(0xFFFFDB00)
+    }
+
+    object Hint {
+        val inactive = Color.White
+        val active = Color.White.copy(alpha = 0f)
+    }
+}
+
 @Composable
 fun SlideToUnlock(
     isLoading: Boolean,
@@ -77,6 +89,8 @@ fun SlideToUnlock(
         true
     }
 
+    val thumbOffset = IntOffset(swipeState.offset.value.roundToInt(), 0)
+
     LaunchedEffect(isLoading) {
         swipeState.animateTo(if (isLoading) Track.Anchor.End else Track.Anchor.Start)
     }
@@ -85,18 +99,12 @@ fun SlideToUnlock(
         swipeFraction = calculateSwipeFraction(swipeState.progress)
     }
 
-    val (inactiveBackgroundColor, activeBackgroundColor) = Track.BackgroundColors
     val backgroundColor by remember {
-        derivedStateOf {
-            calculateBackgroundColor(swipeFraction, inactiveBackgroundColor, activeBackgroundColor)
-        }
+        derivedStateOf { calculateTrackColor(swipeFraction) }
     }
 
-    val (inactiveHintColor, activeHintColor) = Hint.TextColors
     val hintTextColor by remember {
-        derivedStateOf {
-            calculateHintTextColor(swipeFraction, inactiveHintColor, activeHintColor)
-        }
+        derivedStateOf { calculateHintTextColor(swipeFraction) }
     }
 
     Track(
@@ -105,9 +113,10 @@ fun SlideToUnlock(
         enabled = !isLoading,
         modifier = modifier,
     ) {
-        Hint(
+        Text(
             text = "Swipe to unlock reward",
             color = hintTextColor,
+            style = MaterialTheme.typography.titleSmall,
             modifier = Modifier
                 .align(Alignment.Center)
                 .padding(Hint.PaddingValues),
@@ -115,7 +124,7 @@ fun SlideToUnlock(
 
         Thumb(
             isLoading = isLoading,
-            modifier = Modifier.offset { IntOffset(swipeState.offset.value.roundToInt(), 0) },
+            modifier = Modifier.offset { thumbOffset },
         )
     }
 }
@@ -133,10 +142,6 @@ private fun Track(
     val endOfTrack = with(LocalDensity.current) {
         fullWidth - (2 * Track.HorizontalPadding + Thumb.Size).toPx()
     }
-    val anchors = mapOf(
-        startOfTrack to Track.Anchor.Start,
-        endOfTrack to Track.Anchor.End,
-    )
     Box(
         modifier = modifier
             .onSizeChanged { fullWidth = it.width }
@@ -146,7 +151,10 @@ private fun Track(
                 enabled = enabled,
                 state = swipeState,
                 orientation = Orientation.Horizontal,
-                anchors = anchors,
+                anchors = mapOf(
+                    startOfTrack to Track.Anchor.Start,
+                    endOfTrack to Track.Anchor.End,
+                ),
                 thresholds = Track.SnapThreshold,
                 velocityThreshold = Track.VelocityThreshold,
             )
@@ -160,36 +168,22 @@ private fun Track(
 }
 
 @Composable
-private fun Hint(
-    text: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = text,
-        modifier = modifier,
-        color = color,
-        style = MaterialTheme.typography.titleSmall,
-    )
-}
-
-@Composable
 private fun Thumb(
     isLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
-        contentAlignment = Alignment.Center,
         modifier = modifier
             .size(Thumb.Size)
-            .background(
-                color = Color.White,
-                shape = CircleShape,
-            )
+            .background(color = Color.White, shape = CircleShape)
             .padding(Thumb.Padding),
     ) {
         if (isLoading) {
-            CircularProgressIndicator(color = Color.Black, strokeWidth = 3.dp)
+            CircularProgressIndicator(
+                modifier = Modifier.padding(2.dp),
+                color = Color.Black,
+                strokeWidth = 2.dp
+            )
         } else {
             Image(
                 painter = painterResource(R.drawable.arrow_right),
@@ -200,44 +194,28 @@ private fun Thumb(
 }
 
 private fun calculateSwipeFraction(progress: SwipeProgress<Track.Anchor>): Float {
-    val from = progress.from
-    val atAnchor = from == progress.to
-    val fromStart = from == Track.Anchor.Start
-    val fraction = progress.fraction
+    val atAnchor = progress.from == progress.to
+    val fromStart = progress.from == Track.Anchor.Start
     return if (atAnchor) {
         if (fromStart) 0f else 1f
     } else {
-        if (fromStart) fraction else 1f - fraction
+        if (fromStart) progress.fraction else 1f - progress.fraction
     }
 }
 
-private fun calculateHintTextColor(
-    swipeFraction: Float,
-    inactiveHintColor: Color,
-    activeHintColor: Color,
-): Color {
+private fun calculateHintTextColor(swipeFraction: Float): Color {
     val fraction = (swipeFraction / Hint.FadeOutThreshold).coerceIn(0f..1f)
-    return lerp(inactiveHintColor, activeHintColor, fraction)
+    return lerp(Colors.Hint.inactive, Colors.Hint.active, fraction)
 }
 
-private fun calculateBackgroundColor(
-    swipeFraction: Float,
-    inactiveBackgroundColor: Color,
-    activeBackgroundColor: Color,
-): Color {
+private fun calculateTrackColor(swipeFraction: Float): Color {
     var fraction = (swipeFraction / Track.BackgroundChangeThreshold).coerceIn(0f..1f)
     fraction = LinearOutSlowInEasing.transform(fraction)
-    return lerp(inactiveBackgroundColor, activeBackgroundColor, fraction)
+    return lerp(Colors.Track.inactive, Colors.Track.active, fraction)
 }
 
 private object Hint {
-    val TextColors
-        // Note: don't use Color.Transparent when mixing colors, it's not the same thing
-        @Composable
-        get() = Color.White to Color.White.copy(alpha = 0f)
-
     const val FadeOutThreshold = 0.35f
-
     val PaddingValues = PaddingValues(horizontal = Thumb.Size + 8.dp)
 }
 
@@ -256,10 +234,6 @@ internal object Track {
         vertical = 8.dp,
     )
 
-    val BackgroundColors
-        @Composable
-        get() = Color(0xFF111111) to Color(0xFFFFDB00)
-
     enum class Anchor { Start, End }
 
     private const val VelocityMultiplier = 10
@@ -275,27 +249,23 @@ internal object Track {
     }
 }
 
-private val previewBackgroundColor = Color(0xFFEEEEEE)
+private val previewBackgroundColor = Color(0xFFDEDEDE)
 
 @Preview
 @Composable
-private fun PreviewTrack() {
+private fun Preview() {
     var isLoading by remember { mutableStateOf(false) }
     DemoSlideToUnlockTheme {
+        val spacing = 88.dp
         Column(
             verticalArrangement = spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .background(previewBackgroundColor)
-                .padding(horizontal = 24.dp, vertical = 32.dp),
+                .padding(horizontal = 24.dp),
         ) {
-            Text(
-                text = "THUMB",
-                style = MaterialTheme.typography.titleMedium,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(spacing))
 
             Row(
                 horizontalArrangement = Arrangement.End,
@@ -318,16 +288,7 @@ private fun PreviewTrack() {
             }
 
 
-            Divider(modifier = Modifier.padding(vertical = 24.dp))
-
-
-            Text(
-                text = "TRACK",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 0.dp),
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(spacing))
 
             Text(text = "Inactive")
             Track(
@@ -337,7 +298,7 @@ private fun PreviewTrack() {
                 modifier = Modifier.fillMaxWidth(),
                 content = {},
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(text = "Active")
             Track(
                 swipeState = SwipeableState(Track.Anchor.Start),
@@ -348,27 +309,22 @@ private fun PreviewTrack() {
             )
 
 
-            Divider(modifier = Modifier.padding(vertical = 24.dp))
+            Spacer(modifier = Modifier.height(spacing))
 
-
-            Text(
-                text = "FINAL PRODUCT",
-                style = MaterialTheme.typography.titleMedium,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             SlideToUnlock(
                 isLoading = isLoading,
                 onUnlockRequested = { isLoading = true },
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.weight(1f))
             OutlinedButton(
-                colors = ButtonDefaults.outlinedButtonColors(backgroundColor = Color.Transparent),
+                colors = ButtonDefaults.outlinedButtonColors(),
                 shape = RoundedCornerShape(percent = 50),
                 onClick = { isLoading = false }) {
                 Text(text = "Cancel loading", style = MaterialTheme.typography.labelMedium)
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
