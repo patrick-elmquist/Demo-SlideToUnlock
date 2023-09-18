@@ -2,7 +2,6 @@
 
 package com.patrick.elmquist.demo.slidetounlock
 
-import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -11,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement.Absolute.spacedBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,14 +62,14 @@ import kotlin.math.roundToInt
 @Composable
 fun SlideToUnlock(
     isLoading: Boolean,
+    onUnlockRequested: () -> Unit,
     modifier: Modifier = Modifier,
-    onUnlockRequested: () -> Unit = {},
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val swipeState = rememberSwipeableState(
-        initialValue = if (isLoading) Track.Anchor.End else Track.Anchor.Start,
+        initialValue = if (isLoading) Anchor.End else Anchor.Start,
         confirmStateChange = { anchor ->
-            if (anchor == Track.Anchor.End) {
+            if (anchor == Anchor.End) {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 onUnlockRequested()
             }
@@ -80,83 +81,116 @@ fun SlideToUnlock(
         derivedStateOf { calculateSwipeFraction(swipeState.progress) }
     }
 
-    val backgroundColor by remember {
-        derivedStateOf { calculateTrackColor(swipeFraction) }
-    }
-
-    val hintTextColor by remember {
-        derivedStateOf { calculateHintTextColor(swipeFraction) }
-    }
-
     LaunchedEffect(isLoading) {
-        swipeState.animateTo(if (isLoading) Track.Anchor.End else Track.Anchor.Start)
+        swipeState.animateTo(if (isLoading) Anchor.End else Anchor.Start)
     }
 
     Track(
         swipeState = swipeState,
-        color = backgroundColor,
+        swipeFraction = swipeFraction,
         enabled = !isLoading,
         modifier = modifier,
     ) {
-        Text(
+        Hint(
             text = "Swipe to unlock reward",
-            color = hintTextColor,
-            style = MaterialTheme.typography.titleSmall,
+            swipeFraction = swipeFraction,
             modifier = Modifier
                 .align(Alignment.Center)
-                .padding(Hint.PaddingValues),
+                .padding(PaddingValues(horizontal = Thumb.Size + 8.dp)),
         )
 
         Thumb(
             isLoading = isLoading,
-            modifier = Modifier
-                .offset { IntOffset(swipeState.offset.value.roundToInt(), 0) },
+            modifier = Modifier.offset {
+                IntOffset(swipeState.offset.value.roundToInt(), 0)
+            },
         )
     }
 }
 
+fun calculateSwipeFraction(progress: SwipeProgress<Anchor>): Float {
+    val atAnchor = progress.from == progress.to
+    val fromStart = progress.from == Anchor.Start
+    return if (atAnchor) {
+        if (fromStart) 0f else 1f
+    } else {
+        if (fromStart) progress.fraction else 1f - progress.fraction
+    }
+}
+
+enum class Anchor { Start, End }
+
 @Composable
-private fun Track(
-    swipeState: SwipeableState<Track.Anchor>,
-    color: Color,
+fun Track(
+    swipeState: SwipeableState<Anchor>,
+    swipeFraction: Float,
     enabled: Boolean,
     modifier: Modifier = Modifier,
     content: @Composable (BoxScope.() -> Unit),
 ) {
     val density = LocalDensity.current
     var fullWidth by remember { mutableStateOf(0) }
-    val startOfTrack = 0f
-    val endOfTrack = remember(fullWidth) {
-        with(density) { fullWidth - (2 * Track.HorizontalPadding + Thumb.Size).toPx() }
+
+    val horizontalPadding = 10.dp
+
+    val startOfTrackPx = 0f
+    val endOfTrackPx = remember(fullWidth) {
+        with(density) { fullWidth - (2 * horizontalPadding + Thumb.Size).toPx() }
+    }
+
+    val snapThreshold = 0.8f
+    val thresholds = { from: Anchor, _: Anchor ->
+        if (from == Anchor.Start) {
+            FractionalThreshold(snapThreshold)
+        } else {
+            FractionalThreshold(1f - snapThreshold)
+        }
+    }
+
+    val backgroundColor by remember {
+        derivedStateOf { calculateTrackColor(swipeFraction) }
     }
 
     Box(
         modifier = modifier
             .onSizeChanged { fullWidth = it.width }
-            .height(Track.Height)
+            .height(56.dp)
             .fillMaxWidth()
             .swipeable(
                 enabled = enabled,
                 state = swipeState,
                 orientation = Orientation.Horizontal,
                 anchors = mapOf(
-                    startOfTrack to Track.Anchor.Start,
-                    endOfTrack to Track.Anchor.End,
+                    startOfTrackPx to Anchor.Start,
+                    endOfTrackPx to Anchor.End,
                 ),
-                thresholds = Track.SnapThreshold,
+                thresholds = thresholds,
                 velocityThreshold = Track.VelocityThreshold,
             )
             .background(
-                color = color,
+                color = backgroundColor,
                 shape = RoundedCornerShape(percent = 50),
             )
-            .padding(Track.PaddingValues),
+            .padding(
+                PaddingValues(
+                    horizontal = horizontalPadding,
+                    vertical = 8.dp,
+                )
+            ),
         content = content,
     )
 }
 
+val AlmostBlack = Color(0xFF111111)
+val Yellow = Color(0xFFFFDB00)
+fun calculateTrackColor(swipeFraction: Float): Color {
+    val endOfColorChangeFraction = 0.4f
+    val fraction = (swipeFraction / endOfColorChangeFraction).coerceIn(0f..1f)
+    return lerp(AlmostBlack, Yellow, fraction)
+}
+
 @Composable
-private fun Thumb(
+fun Thumb(
     isLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -164,7 +198,7 @@ private fun Thumb(
         modifier = modifier
             .size(Thumb.Size)
             .background(color = Color.White, shape = CircleShape)
-            .padding(Thumb.Padding),
+            .padding(8.dp),
     ) {
         if (isLoading) {
             CircularProgressIndicator(
@@ -181,66 +215,43 @@ private fun Thumb(
     }
 }
 
-private fun calculateSwipeFraction(progress: SwipeProgress<Track.Anchor>): Float {
-    val atAnchor = progress.from == progress.to
-    val fromStart = progress.from == Track.Anchor.Start
-    return if (atAnchor) {
-        if (fromStart) 0f else 1f
-    } else {
-        if (fromStart) progress.fraction else 1f - progress.fraction
+@Composable
+fun Hint(
+    text: String,
+    swipeFraction: Float,
+    modifier: Modifier = Modifier,
+) {
+    val hintTextColor by remember {
+        derivedStateOf { calculateHintTextColor(swipeFraction) }
     }
+
+    Text(
+        text = text,
+        color = hintTextColor,
+        style = MaterialTheme.typography.titleSmall,
+        modifier = modifier
+    )
 }
 
-private fun calculateHintTextColor(swipeFraction: Float): Color {
-    val fraction = (swipeFraction / Hint.FadeOutThreshold).coerceIn(0f..1f)
+fun calculateHintTextColor(swipeFraction: Float): Color {
+    val endOfFadeFraction = 0.35f
+    val fraction = (swipeFraction / endOfFadeFraction).coerceIn(0f..1f)
     return lerp(Color.White, Color.White.copy(alpha = 0f), fraction)
 }
 
-private fun calculateTrackColor(swipeFraction: Float): Color {
-    val fraction = (swipeFraction / Track.BackgroundChangeThreshold).coerceIn(0f..1f)
-    return lerp(Color(0xFF111111), Color(0xFFFFDB00), fraction)
-}
-
-private object Hint {
-    const val FadeOutThreshold = 0.35f
-    val PaddingValues = PaddingValues(horizontal = Thumb.Size + 8.dp)
-}
 
 private object Thumb {
     val Size = 40.dp
-    val Padding = 8.dp
 }
 
-@VisibleForTesting
-internal object Track {
-    val Height = 56.dp
-
-    val HorizontalPadding = 10.dp
-    val PaddingValues = PaddingValues(
-        horizontal = HorizontalPadding,
-        vertical = 8.dp,
-    )
-
-    enum class Anchor { Start, End }
-
-    private const val VelocityMultiplier = 10
-    val VelocityThreshold = SwipeableDefaults.VelocityThreshold * VelocityMultiplier
-
-    const val BackgroundChangeThreshold = 0.4f
-
-    private const val SnapThresholdFraction = 0.8f
-    private val StartToEndSnapThreshold = FractionalThreshold(SnapThresholdFraction)
-    private val EndToStartSnapThreshold = FractionalThreshold(1f - SnapThresholdFraction)
-    val SnapThreshold = { from: Anchor, _: Anchor ->
-        if (from == Anchor.Start) StartToEndSnapThreshold else EndToStartSnapThreshold
-    }
+private object Track {
+    val VelocityThreshold = SwipeableDefaults.VelocityThreshold * 10
 }
-
-private val previewBackgroundColor = Color(0xFFDEDEDE)
 
 @Preview
 @Composable
 private fun Preview() {
+    val previewBackgroundColor = Color(0xFFEDEDED)
     var isLoading by remember { mutableStateOf(false) }
     DemoSlideToUnlockTheme {
         val spacing = 88.dp
@@ -254,43 +265,46 @@ private fun Preview() {
         ) {
             Spacer(modifier = Modifier.height(spacing))
 
-            Row(
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "Normal")
-                Spacer(modifier = Modifier.widthIn(min = 16.dp))
-                Thumb(isLoading = false)
+            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = "Normal")
+                    Spacer(modifier = Modifier.weight(1f))
+                    Thumb(isLoading = false)
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = "Loading")
+                    Spacer(modifier = Modifier.widthIn(min = 16.dp))
+                    Thumb(isLoading = true)
+                }
+
+
             }
-
-            Spacer(modifier = Modifier.height(0.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "Loading")
-                Spacer(modifier = Modifier.widthIn(min = 16.dp))
-                Thumb(isLoading = true)
-            }
-
 
             Spacer(modifier = Modifier.height(spacing))
 
             Text(text = "Inactive")
             Track(
-                swipeState = SwipeableState(Track.Anchor.Start),
+                swipeState = SwipeableState(Anchor.Start),
+                swipeFraction = 0f,
                 enabled = true,
-                color = Color.Black,
                 modifier = Modifier.fillMaxWidth(),
                 content = {},
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(text = "Active")
             Track(
-                swipeState = SwipeableState(Track.Anchor.Start),
+                swipeState = SwipeableState(Anchor.Start),
+                swipeFraction = 1f,
                 enabled = true,
-                color = Color(0xFFFFDB00),
                 modifier = Modifier.fillMaxWidth(),
                 content = {},
             )
