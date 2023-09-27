@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -129,7 +130,7 @@ fun Track(
     content: @Composable (BoxScope.() -> Unit),
 ) {
     val density = LocalDensity.current
-    var fullWidth by remember { mutableStateOf(0) }
+    var fullWidth by remember { mutableIntStateOf(0) }
 
     val horizontalPadding = 10.dp
 
@@ -147,7 +148,7 @@ fun Track(
         }
     }
 
-    val backgroundColor by remember {
+    val backgroundColor by remember(swipeFraction) {
         derivedStateOf { calculateTrackColor(swipeFraction) }
     }
 
@@ -221,7 +222,7 @@ fun Hint(
     swipeFraction: Float,
     modifier: Modifier = Modifier,
 ) {
-    val hintTextColor by remember {
+    val hintTextColor by remember(swipeFraction) {
         derivedStateOf { calculateHintTextColor(swipeFraction) }
     }
 
